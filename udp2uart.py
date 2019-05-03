@@ -18,7 +18,7 @@ awaitingPrompt = False
 baudrate = 9600 # this must be 9600 initially
 STNBAUD = 115200
 SEND_TIME_OUT = 0.05
-address = '0.0.0.0'
+address = ('192.168.7.1', udpPort)
 uartRx_threadQueue = queue.Queue()
 udpRx_threadQueue = queue.Queue()
 uartTx_threadQueue = queue.Queue()
@@ -32,9 +32,9 @@ def setBaud(ser, rate):
     rate = 'ST SBR ' + str(rate)
     sendSerial(ser, 'ATVR')
     sendSerial(ser, 'ST BRT 300')
-    sendSerial(ser, 'ST SBR 115200')
+    sendSerial(ser, 'ST SBR 10000000')
     sendSerial(ser, 'ST WBR')
-    ser = serial.Serial(port = "/dev/ttyO1",baudrate=115200)
+    ser = serial.Serial(port = "/dev/ttyO1",baudrate=4000000)
     sendSerial(ser, 'ATI')
     return ser
 
@@ -57,7 +57,8 @@ def udpRx_thread(s):
     global address
     while True:
         dbytes = ''
-        dbytes,address = s.recvfrom(64)
+        (dbytes,address) = s.recvfrom(64)
+        print(str(address) + "rcv")
         data = dbytes.decode('utf-8')
         #data = data[:-1]
         uartTx_threadQueue.put(data)
@@ -70,7 +71,7 @@ def uartRx_thread(ser):
         if not ser.isOpen():
             ser.open()
         char = ser.read().decode('utf-8')
-        print(char)
+        #print(char)
         msg += char
         if char == '>':
             if awaitingPrompt:
