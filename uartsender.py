@@ -4,47 +4,57 @@ import serial, sys, signal, time
 import Adafruit_BBIO.UART as UART
 import pysnooper
 
-udpPort = int(sys.argv[2]) if len(sys.argv) > 2 else 13131
+udpPort = int(sys.argv[2]) if len(sys.argv) > 2 else 11000
 s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
 s.bind(('0.0.0.0',udpPort))
-print("\n\nlistening on port " + str(udpPort)+"...")
-#while True:
-#    initbytes,address = s.recvfrom(64)
-#    print(initbytes.decode('utf-8'))
-#    if initbytes == b'init':
-#        break
+print('\n\nlistening on port ' + str(udpPort)+'...')
     
+DEBUG = False
+LOG_PATH = 'debug.log'
+if DEBUG:
+    open(LOG_PATH, 'w').close()
+
 awaitingPrompt = False
 baudrate = 9600 # this must be 9600 initially
 STNBAUD = 115200
-SEND_TIME_OUT = 0.05
+SEND_TIMEOUT = 0.05
 address = '0.0.0.0'
 uartRx_threadQueue = queue.Queue()
 udpRx_threadQueue = queue.Queue()
 uartTx_threadQueue = queue.Queue()
 udpTx_threadQueue = queue.Queue()
 
+def debug_(dec, condition):
+    def decorator(func):
+        if not condition:
+            return func
+        return dec(func)
+    return decorator
 
-#@pysnooper.snoop('/var/lib/cloud9/stn2120_tools/log/file.log')
+@debug_(pysnooper.snoop(LOG_PATH), DEBUG)
 def setBaud(ser, rate):
     time.sleep(.1)
     baudrate = rate
     rate = 'ST SBR ' + str(rate)
     sendSerial(ser, 'ATVR')
     sendSerial(ser, 'ST BRT 300')
-    sendSerial(ser, 'ST SBR 115200')
+    sendSerial(ser, rate)
     sendSerial(ser, 'ST WBR')
-    ser = serial.Serial(port = "/dev/ttyO1",baudrate=115200)
+    ser = serial.Serial(
+        port = '/dev/ttyO1',
+        baudrate = baudrate
+    )
+
     sendSerial(ser, 'ATI')
     return ser
 
-#@pysnooper.snoop('/var/lib/cloud9/stn2120_tools/log/file.log')
+@debug_(pysnooper.snoop(LOG_PATH), DEBUG)
 def sendSerial(ser, msg):
     start = time.time()
     global awaitingPrompt
     while awaitingPrompt:
         curr = time.time()
-        if curr - start > SEND_TIME_OUT:
+        if curr - start > SEND_TIMEOUT:
             break
     if not ser.isOpen():
         ser.open()
@@ -52,17 +62,16 @@ def sendSerial(ser, msg):
     ser.write(bytes(msg + '\r', 'utf-8'))
     awaitingPrompt = True
 
-#@pysnooper.snoop('/var/lib/cloud9/stn2120_tools/log/file.log')
+@debug_(pysnooper.snoop(LOG_PATH), DEBUG)
 def udpRx_thread(s):
     global address
     while True:
         dbytes = ''
         dbytes,address = s.recvfrom(64)
         data = dbytes.decode('utf-8')
-        #data = data[:-1]
         uartTx_threadQueue.put(data)
 
-#@pysnooper.snoop('/var/lib/cloud9/stn2120_tools/log/file.log')
+@debug_(pysnooper.snoop(LOG_PATH), DEBUG)
 def uartRx_thread(ser):
     global awaitingPrompt
     msg = ''
@@ -77,9 +86,12 @@ def uartRx_thread(ser):
                 awaitingPrompt = False
         if char == '\r':
             udpTx_threadQueue.put(msg)
+            if msg == 'KILLBB\r':
+                s.close()
+                ser.close()
             msg = ''
 
-#@pysnooper.snoop('/var/lib/cloud9/stn2120_tools/log/file.log')
+@debug_(pysnooper.snoop(LOG_PATH), DEBUG)
 def udpTx_thread(s):
     global address
     while True:
@@ -96,8 +108,12 @@ def uartTx_thread(ser):
             sendSerial(ser, msg)
 
 def main():
-    UART.setup("UART1")
-    ser = serial.Serial(port = "/dev/ttyO1", baudrate=9600)
+    UART.setup('UART1')
+    ser = serial.Serial(
+        port = '/dev/ttyO1', 
+        baudrate = 9600
+    )
+
     if not ser.isOpen():
         ser.open()
     time.sleep(.1)
@@ -105,17 +121,33 @@ def main():
     ser.flushOutput()
     ser = setBaud(ser, STNBAUD)
     try:
-        udpRx_threadThread = threading.Thread(target = udpRx_thread, args = ([s]))
+        udpRx_threadThread = threading.Thread(
+            target = udpRx_thread, 
+            args = ([s])
+        )
         udpRx_threadThread.start()
-        uartRx_threadThread = threading.Thread(target = uartRx_thread, args=([ser]))
+
+        uartRx_threadThread = threading.Thread(
+            target = uartRx_thread, 
+            args = ([ser])
+        )
         uartRx_threadThread.start()
-        udpTx_threadThread = threading.Thread(target = udpTx_thread, args = ([s]))
+
+        udpTx_threadThread = threading.Thread(
+            target = udpTx_thread, 
+            args = ([s])
+        )
         udpTx_threadThread.start()
-        uartTx_threadThread = threading.Thread(target = uartTx_thread, args=([ser]))
+
+        uartTx_threadThread = threading.Thread(
+            target = uartTx_thread, 
+            args = ([ser])
+        )
         uartTx_threadThread.start()
+
     except KeyboardInterrupt:
         s.close()
         ser.close()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
